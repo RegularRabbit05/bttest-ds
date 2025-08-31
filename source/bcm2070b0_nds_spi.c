@@ -87,6 +87,38 @@ BTRegion btRegion(void) {
   return getGameRegion(gameHeader);
 }
 
+void btRead(BTData *data) {
+  if (!data)
+    return;
+
+  const u16 invalidSize = data->responseSize ? 0 : 0xFFFF;
+  const u16 oldCnt = spiGet();
+  const u8 resCmd[2] = {0x02, 0x00};
+
+  // Get response.
+  spiSet(0xA040);
+  for (int i = 0; i < 2; i++)
+    spiTransfer(resCmd[i]);
+
+  u16 resSize = (u16)(spiTransfer(0x00)) << 8;
+  resSize |= spiTransfer(0x00);
+  data->responseSize = resSize <= data->responseSize ? resSize : invalidSize;
+
+  if (data->responseSize != invalidSize) {
+    for (u16 i = 0; i < data->responseSize; i++) {
+      if (i == (data->responseSize - 1))
+        spiSet(0xA000);
+
+      const u8 b = spiTransfer(0x00);
+      if (data->response)
+        data->response[i] = b;
+    }
+  }
+
+  // Restore old status.
+  spiSet(oldCnt);
+}
+
 void btTransfer(BTData *data) {
   // Check parameters.
   if (!data)
@@ -100,7 +132,6 @@ void btTransfer(BTData *data) {
 
   // Build commands.
   const u8 reqCmd[4] = {0x01, 0x00, data->requestSize >> 8, data->requestSize};
-  const u8 resCmd[2] = {0x02, 0x00};
 
   // Initialize connection.
   const u16 oldCnt = spiGet();
@@ -125,29 +156,11 @@ void btTransfer(BTData *data) {
     spiTransfer(data->request[i]);
   }
 
+  // Restore old status.
+  spiSet(oldCnt);
+
   // Wait for command to be processed.
   waitForIRQ();
 
-  // Get response.
-  spiSet(0xA040);
-  for (int i = 0; i < 2; i++)
-    spiTransfer(resCmd[i]);
-
-  u16 resSize = (u16)(spiTransfer(0x00)) << 8;
-  resSize |= spiTransfer(0x00);
-  data->responseSize = resSize <= data->responseSize ? resSize : invalidSize;
-
-  if (data->responseSize != invalidSize) {
-    for (u16 i = 0; i < data->responseSize; i++) {
-      if (i == (data->responseSize - 1))
-        spiSet(0xA000);
-
-      const u8 b = spiTransfer(0x00);
-      if (data->response)
-        data->response[i] = b;
-    }
-  }
-
-  // Restore old status.
-  spiSet(oldCnt);
+  btRead(data);
 }

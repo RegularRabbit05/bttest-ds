@@ -29,6 +29,7 @@ typedef struct {
 BTRegion btRegion(void);
 
 // Transfer data.
+void btRead(BTData *data);
 void btTransfer(BTData *data);
 
 #endif /* _BCM2070B0_NDS_SPI_H */

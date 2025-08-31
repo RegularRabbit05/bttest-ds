@@ -1,14 +1,8 @@
 #include "bcm2070b0_nds_spi.h"
 #include "utility.h"
 
-#include <fat.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#define FLASH_FILE "sd:/PTSM_Flash_Dump.bin"
-#define SAVE_FILE "sd:/PTSM_Save_Dump.bin"
-
-// Main
 
 int main(void) {
   // Init screens.
@@ -16,14 +10,6 @@ int main(void) {
   videoSetModeSub(MODE_0_2D);
   vramSetBankA(VRAM_A_MAIN_BG);
   consoleInit(NULL, 3, BgType_Text4bpp, BgSize_T_256x256, 31, 0, true, true);
-
-  // Init libfat.
-  if (!fatInitDefault()) {
-    printError("FAT init failed!");
-    iprintf("Press any key to quit...\n");
-    waitForKey();
-    return 0;
-  }
 
   // Enable card access.
   enableSlot1();
@@ -46,31 +32,41 @@ int main(void) {
     swiDelay(0x82EA * 200); // 200ms
 
     iprintf("Region: %s\n", regionAsString(region));
-    iprintf("> A: Dump savegame\n");
-    iprintf("> B: Restore savegame\n");
-    iprintf("> X: Dump flash\n");
-    iprintf("> Y: Test bluetooth chip\n");
+    iprintf("> A: Begin Testing To\n");
+    iprintf("> B: Begin Testing From\n");
     iprintf("> Other: Quit\n");
 
     u32 opt = waitForKey();
-
     if (opt & KEY_A) {
-      if (dumpSave(SAVE_FILE))
-        printSuccess("Savegame dumped successfully!");
+      if (hciReset()) {
+        hciClientSetName("BCM2070");
+
+        BTDevices devs = hciScanDevices(0x04);
+        u8 selected = 0;
+        if (devs.count == 0) goto skip;
+        iprintf("Devices found:\n");
+        for (u8 d = 0; d < devs.count; d++) iprintf("%03d %s\n", d, devs.devices[d].name);
+        do {
+          iprintf("%d     \r", selected);
+          opt = waitForKey();
+          if (opt & KEY_DOWN && selected < devs.count-1) selected++;
+          if (opt & KEY_UP && selected != 0) selected--;
+          if (opt & KEY_B) goto skip;
+        } while (!(opt & KEY_A));
+        iprintf("\n");
+        hciRemoteConnect(&devs.devices[selected], 0xCC18, 0);
+      }
     } else if (opt & KEY_B) {
-      if (restoreSave(SAVE_FILE))
-        printSuccess("Savegame restored successfully!");
-    } else if (opt & KEY_X) {
-      if (dumpFlash(FLASH_FILE))
-        printSuccess("Flash dumped successfully!");
-    } else if (opt & KEY_Y) {
-      if (testBT())
-        printSuccess("Bluetooth test succeeded!");
-      else
-        printError("Bluetooth test failed!");
+      if (hciReset()) {
+        hciClientSetName("BCM2070");
+        hciClientInquiryScanParameters(0x0800, 0x0012);
+        hciClientPageScanParameters(0x0800, 0x0012);
+        hciClientPairingMode(0x03);
+      }
     } else {
       quit = true;
     }
+    skip:
 
     if (quit)
       break;
